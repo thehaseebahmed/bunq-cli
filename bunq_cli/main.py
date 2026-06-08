@@ -1,5 +1,6 @@
 import click
 
+from .commands.accounts import accounts_group
 from .commands.session import session_group
 
 
@@ -12,3 +13,4 @@ def cli(ctx: click.Context) -> None:
 
 
 cli.add_command(session_group)
+cli.add_command(accounts_group)
