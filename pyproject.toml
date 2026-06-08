@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bunq-cli"
+version = "0.1.0"
+description = "A command-line interface and skill set for interacting with the bunq API"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "click>=8.1",
+]
+
+[project.scripts]
+bunq = "bunq_cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bunq_cli*"]
