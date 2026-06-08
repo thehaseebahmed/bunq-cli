@@ -1,10 +1,6 @@
 """Thin HTTP client for the bunq REST API.
 
-All requests that carry a private key are signed per the bunq signing spec:
-  {METHOD} {path+query}\\n
-  {Header}: {value}\\n  (Cache-Control, User-Agent, X-Bunq-* sorted A-Z)
-  \\n
-  {body}
+Signed requests use RSA-SHA256 over the raw request body only.
 """
 
 import json
@@ -16,7 +12,6 @@ from .config import get_base_url
 from .crypto import sign
 
 _USER_AGENT = "bunq-cli/0.1.0"
-_SIGN_HEADERS = frozenset({"Cache-Control", "User-Agent"})
 
 
 class BunqAPIError(Exception):
@@ -38,20 +33,6 @@ def _build_headers(token: str | None) -> dict[str, str]:
     if token:
         headers["X-Bunq-Client-Authentication"] = token
     return headers
-
-
-_SIGN_EXCLUDE = frozenset({"X-Bunq-Client-Signature", "X-Bunq-Client-Authentication"})
-
-
-def _signing_string(method: str, path: str, headers: dict[str, str], body: str) -> bytes:
-    relevant = {
-        k: v
-        for k, v in headers.items()
-        if k in _SIGN_HEADERS or k.startswith("X-Bunq-")
-        if k not in _SIGN_EXCLUDE
-    }
-    header_block = "\n".join(f"{k}: {v}" for k, v in sorted(relevant.items()))
-    return f"{method.upper()} /v1{path}\n{header_block}\n\n{body}".encode()
 
 
 def _raise_for_error(response: httpx.Response) -> None:
@@ -78,7 +59,7 @@ def request(
     body_str = json.dumps(body) if body is not None else ""
 
     if private_pem:
-        sig = sign(private_pem, _signing_string(method, path, headers, body_str))
+        sig = sign(private_pem, body_str.encode())
         headers["X-Bunq-Client-Signature"] = sig
 
     response = httpx.request(method, url, content=body_str, headers=headers)
