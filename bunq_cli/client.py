@@ -40,12 +40,15 @@ def _build_headers(token: str | None) -> dict[str, str]:
     return headers
 
 
+_SIGN_EXCLUDE = frozenset({"X-Bunq-Client-Signature", "X-Bunq-Client-Authentication"})
+
+
 def _signing_string(method: str, path: str, headers: dict[str, str], body: str) -> bytes:
     relevant = {
         k: v
         for k, v in headers.items()
         if k in _SIGN_HEADERS or k.startswith("X-Bunq-")
-        if k != "X-Bunq-Client-Signature"
+        if k not in _SIGN_EXCLUDE
     }
     header_block = "\n".join(f"{k}: {v}" for k, v in sorted(relevant.items()))
     return f"{method.upper()} /v1{path}\n{header_block}\n\n{body}".encode()
