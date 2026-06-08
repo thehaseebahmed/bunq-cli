@@ -4,40 +4,78 @@ A command-line interface (CLI) and skill set that allows an LLM assistant to int
 
 bunq is a mobile bank that exposes a rich REST API. This project wraps that API in a developer-friendly CLI so that both humans and LLM agents can perform banking operations — checking balances, listing transactions, making payments, and more — without needing to write code directly against the API.
 
-## Features (planned)
-
-- Authenticate with the bunq API (API key + device registration)
-- List monetary accounts and balances
-- Fetch recent transactions
-- Initiate payments
-- Manage bunq cards
-- Structured JSON output suitable for LLM tool use
-
 ## Requirements
 
 - Python 3.10+
 - A bunq account and API key ([sandbox](https://beta.doc.bunq.com/basics/sandbox) or production)
 
-## Installation
+## Usage
+
+### Without installation (uvx)
+
+[uv](https://docs.astral.sh/uv/) can run bunq-cli in a throwaway environment with no prior setup:
 
 ```bash
-# Clone the repository
+uvx --from "git+https://github.com/thehaseebahmed/bunq-cli" bunq
+```
+
+State (RSA keys, tokens) is still persisted between invocations in `~/.bunq/`.
+
+### Install from git (pip)
+
+```bash
+pip install "git+https://github.com/thehaseebahmed/bunq-cli"
+bunq --help
+```
+
+### Install for development
+
+```bash
 git clone https://github.com/thehaseebahmed/bunq-cli.git
 cd bunq-cli
-
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Install in editable mode
 pip install -e .
 ```
 
-## Usage
+## Configuration
+
+All configuration is via environment variables:
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `BUNQ_API_KEY` | Yes | — | Your bunq API key |
+| `BUNQ_ENVIRONMENT` | No | `sandbox` | `sandbox` or `production` |
+| `BUNQ_STATE_DIR` | No | `~/.bunq` | Directory for storing session state |
+
+## Commands
+
+### `bunq session start`
+
+Authenticate with the bunq API and store a session token.
+
+On first run, generates an RSA key pair, registers an installation and device,
+then opens a session. Subsequent runs reuse the stored installation and only
+open a fresh session.
 
 ```bash
-bunq          # prints "Hello, Bunq" (more commands coming soon)
-bunq --help   # show available commands
+bunq session start
+```
+
+### `bunq accounts list`
+
+List monetary accounts. Active accounts are shown by default.
+
+```bash
+bunq accounts list                # active accounts only
+bunq accounts list --include-closed   # include cancelled/closed accounts
+```
+
+### `bunq accounts balance`
+
+Show the balance for a single account or all active accounts.
+
+```bash
+bunq accounts balance <id>   # balance for a specific account
+bunq accounts balance --all  # balance for every active account
 ```
 
 ## Development
