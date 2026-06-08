@@ -62,20 +62,14 @@ bunq session start
 
 ### `bunq accounts list`
 
-List monetary accounts. Active accounts are shown by default.
+List monetary accounts. Active accounts are shown by default. Results are
+paginated — press Enter to advance or Ctrl-C to quit.
 
 ```bash
-bunq accounts list                # active accounts only
-bunq accounts list --include-closed   # include cancelled/closed accounts
-```
-
-### `bunq accounts balance`
-
-Show the balance for a single account or all active accounts.
-
-```bash
-bunq accounts balance <id>   # balance for a specific account
-bunq accounts balance --all  # balance for every active account
+bunq accounts list                 # active accounts, paginated
+bunq accounts list --all           # all active accounts at once
+bunq accounts list --include-closed        # include cancelled/closed accounts
+bunq accounts list --include-closed --all  # all accounts, no pagination
 ```
 
 ## Development

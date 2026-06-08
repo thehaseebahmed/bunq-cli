@@ -1,8 +1,4 @@
-"""bunq accounts commands.
-
-accounts list     — list monetary accounts (active by default)
-accounts balance  — show balance for one account or all accounts
-"""
+"""bunq accounts commands."""
 
 from decimal import Decimal, InvalidOperation
 
@@ -10,6 +6,8 @@ import click
 
 from ..client import BunqAPIError, request
 from ..config import load_state
+
+_PAGE_SIZE = 10
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -57,6 +55,25 @@ def _fmt_balance(acc: dict) -> str:
         return "—"
 
 
+def _print_header() -> None:
+    header = f"{'ID':<10}  {'Description':<28}  {'IBAN':<22}  {'Balance':>14}  Status"
+    click.echo(header)
+    click.echo("-" * len(header))
+
+
+def _print_row(acc: dict) -> None:
+    iban = next(
+        (a["value"] for a in acc.get("alias", []) if a.get("type") == "IBAN"), "—"
+    )
+    click.echo(
+        f"{acc.get('id', ''):<10}  "
+        f"{str(acc.get('description', ''))[:28]:<28}  "
+        f"{iban[:22]:<22}  "
+        f"{_fmt_balance(acc):>14}  "
+        f"{acc.get('status', '')}"
+    )
+
+
 # ── command group ─────────────────────────────────────────────────────────────
 
 @click.group("accounts")
@@ -69,11 +86,13 @@ def accounts_group() -> None:
 @accounts_group.command("list")
 @click.option("--include-closed", is_flag=True, default=False,
               help="Include cancelled and closed accounts.")
-def accounts_list(include_closed: bool) -> None:
+@click.option("--all", "all_accounts", is_flag=True, default=False,
+              help="Print every account without pagination.")
+def accounts_list(include_closed: bool, all_accounts: bool) -> None:
     """List monetary accounts.
 
-    Active accounts are shown by default. Pass --include-closed to also show
-    cancelled or otherwise inactive accounts.
+    Active accounts are shown by default. Results are paginated; press Enter
+    to advance or Ctrl-C to quit. Pass --all to print everything at once.
     """
     state = load_state()
     user_id, token, private_pem = _require_session(state)
@@ -90,72 +109,32 @@ def accounts_list(include_closed: bool) -> None:
         click.echo("No accounts found.")
         return
 
-    header = f"{'ID':<10}  {'Description':<28}  {'IBAN':<22}  {'Balance':>14}  Status"
-    click.echo(header)
-    click.echo("-" * len(header))
-
-    for acc in accounts:
-        iban = next(
-            (a["value"] for a in acc.get("alias", []) if a.get("type") == "IBAN"), "—"
-        )
-        click.echo(
-            f"{acc.get('id', ''):<10}  "
-            f"{str(acc.get('description', ''))[:28]:<28}  "
-            f"{iban[:22]:<22}  "
-            f"{_fmt_balance(acc):>14}  "
-            f"{acc.get('status', '')}"
-        )
-
-
-# ── accounts balance ──────────────────────────────────────────────────────────
-
-@accounts_group.command("balance")
-@click.argument("account_id", required=False)
-@click.option("--all", "all_accounts", is_flag=True, default=False,
-              help="Show balance for every active account.")
-def accounts_balance(account_id: str | None, all_accounts: bool) -> None:
-    """Show the balance for ACCOUNT_ID, or all active accounts with --all."""
-    state = load_state()
-    user_id, token, private_pem = _require_session(state)
-
-    if not all_accounts and not account_id:
-        raise click.UsageError("Provide an ACCOUNT_ID or pass --all.")
+    total = len(accounts)
 
     if all_accounts:
-        try:
-            accounts = _paginate_all(f"/user/{user_id}/monetary-account", token, private_pem)
-        except BunqAPIError as exc:
-            raise click.ClickException(str(exc))
-
-        accounts = [a for a in accounts if a.get("status") == "ACTIVE"]
-
-        if not accounts:
-            click.echo("No active accounts found.")
-            return
-
-        header = f"{'ID':<10}  {'Description':<28}  {'Balance':>14}"
-        click.echo(header)
-        click.echo("-" * len(header))
-
+        _print_header()
         for acc in accounts:
-            click.echo(
-                f"{acc.get('id', ''):<10}  "
-                f"{str(acc.get('description', ''))[:28]:<28}  "
-                f"{_fmt_balance(acc):>14}"
-            )
-    else:
-        try:
-            resp = request(
-                "GET", f"/user/{user_id}/monetary-account/{account_id}",
-                token=token, private_pem=private_pem,
-            )
-        except BunqAPIError as exc:
-            raise click.ClickException(str(exc))
+            _print_row(acc)
+        return
 
-        accounts = _unwrap(resp.get("Response", []))
-        if not accounts:
-            raise click.ClickException(f"Account {account_id} not found.")
+    # Interactive pagination
+    pages = [accounts[i : i + _PAGE_SIZE] for i in range(0, total, _PAGE_SIZE)]
+    for page_num, page in enumerate(pages):
+        _print_header()
+        for acc in page:
+            _print_row(acc)
 
-        acc = accounts[0]
-        click.echo(f"Account:  {acc.get('description', '')} ({account_id})")
-        click.echo(f"Balance:  {_fmt_balance(acc)}")
+        shown = min((page_num + 1) * _PAGE_SIZE, total)
+        if page_num < len(pages) - 1:
+            try:
+                click.echo(
+                    f"\n  {shown}/{total} shown — press Enter for more, Ctrl-C to quit",
+                    nl=False,
+                )
+                input()
+                click.echo()
+            except (KeyboardInterrupt, EOFError):
+                click.echo()
+                break
+        else:
+            click.echo(f"\n  {shown}/{total} shown")
