@@ -2,13 +2,20 @@ import json
 import os
 from pathlib import Path
 
-_CONFIG_DIR = Path.home() / ".config" / "bunq-cli"
-_STATE_FILE = _CONFIG_DIR / "state.json"
-
 BASE_URLS = {
     "sandbox": "https://public-api.sandbox.bunq.com",
     "production": "https://api.bunq.com",
 }
+
+
+def get_state_dir() -> Path:
+    """Return the state directory, honouring BUNQ_STATE_DIR if set."""
+    raw = os.environ.get("BUNQ_STATE_DIR", "").strip()
+    return Path(raw) if raw else Path.home() / ".bunq"
+
+
+def _state_file() -> Path:
+    return get_state_dir() / "state.json"
 
 
 def get_api_key() -> str:
@@ -32,19 +39,22 @@ def get_base_url() -> str:
 
 
 def load_state() -> dict:
-    if not _STATE_FILE.exists():
+    f = _state_file()
+    if not f.exists():
         return {}
-    with _STATE_FILE.open() as f:
-        return json.load(f)
+    with f.open() as fh:
+        return json.load(fh)
 
 
 def save_state(state: dict) -> None:
-    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with _STATE_FILE.open("w") as f:
-        json.dump(state, f, indent=2)
-    _STATE_FILE.chmod(0o600)
+    f = _state_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    with f.open("w") as fh:
+        json.dump(state, fh, indent=2)
+    f.chmod(0o600)
 
 
 def clear_state() -> None:
-    if _STATE_FILE.exists():
-        _STATE_FILE.unlink()
+    f = _state_file()
+    if f.exists():
+        f.unlink()
