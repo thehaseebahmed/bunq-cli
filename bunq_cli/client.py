@@ -40,7 +40,7 @@ def _build_headers(token: str | None) -> dict[str, str]:
     return headers
 
 
-_SIGN_EXCLUDE = frozenset({"X-Bunq-Client-Signature", "X-Bunq-Client-Authentication"})
+_SIGN_EXCLUDE = frozenset({"X-Bunq-Client-Signature"})
 
 
 def _signing_string(method: str, path: str, headers: dict[str, str], body: str) -> bytes:
