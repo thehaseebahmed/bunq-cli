@@ -62,15 +62,17 @@ bunq session start
 
 ### `bunq accounts list`
 
-List monetary accounts. Active accounts are shown by default. Results are
-paginated — press Enter to advance or Ctrl-C to quit.
+List monetary accounts. Active accounts are shown by default, 10 per page.
 
 ```bash
-bunq accounts list                 # active accounts, paginated
-bunq accounts list --all           # all active accounts at once
-bunq accounts list --include-closed        # include cancelled/closed accounts
-bunq accounts list --include-closed --all  # all accounts, no pagination
+bunq accounts list              # page 1 of active accounts
+bunq accounts list --page 2     # navigate to a specific page
+bunq accounts list --all        # all active accounts at once
+bunq accounts list --include-closed         # include cancelled/closed accounts
+bunq accounts list --include-closed --all   # every account, no pagination
 ```
+
+> Name search is not supported — the bunq API does not expose server-side filtering on the accounts endpoint.
 
 ## Development
 

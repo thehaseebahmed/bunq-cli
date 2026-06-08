@@ -8,6 +8,7 @@ from ..client import BunqAPIError, request
 from ..config import load_state
 
 _PAGE_SIZE = 10
+_DEFAULT_PAGE = 1
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -88,12 +89,17 @@ def accounts_group() -> None:
               help="Include cancelled and closed accounts.")
 @click.option("--all", "all_accounts", is_flag=True, default=False,
               help="Print every account without pagination.")
-def accounts_list(include_closed: bool, all_accounts: bool) -> None:
+@click.option("--page", default=_DEFAULT_PAGE, show_default=True, metavar="N",
+              help="Page number to display.")
+def accounts_list(include_closed: bool, all_accounts: bool, page: int) -> None:
     """List monetary accounts.
 
-    Active accounts are shown by default. Results are paginated; press Enter
-    to advance or Ctrl-C to quit. Pass --all to print everything at once.
+    Active accounts are shown by default, 10 per page. Use --page N to
+    navigate, or --all to print everything at once.
     """
+    if page < 1:
+        raise click.BadParameter("must be 1 or greater", param_hint="--page")
+
     state = load_state()
     user_id, token, private_pem = _require_session(state)
 
@@ -109,32 +115,23 @@ def accounts_list(include_closed: bool, all_accounts: bool) -> None:
         click.echo("No accounts found.")
         return
 
-    total = len(accounts)
-
     if all_accounts:
         _print_header()
         for acc in accounts:
             _print_row(acc)
         return
 
-    # Interactive pagination
-    pages = [accounts[i : i + _PAGE_SIZE] for i in range(0, total, _PAGE_SIZE)]
-    for page_num, page in enumerate(pages):
-        _print_header()
-        for acc in page:
-            _print_row(acc)
+    total = len(accounts)
+    total_pages = max(1, -(-total // _PAGE_SIZE))  # ceiling division
 
-        shown = min((page_num + 1) * _PAGE_SIZE, total)
-        if page_num < len(pages) - 1:
-            try:
-                click.echo(
-                    f"\n  {shown}/{total} shown — press Enter for more, Ctrl-C to quit",
-                    nl=False,
-                )
-                input()
-                click.echo()
-            except (KeyboardInterrupt, EOFError):
-                click.echo()
-                break
-        else:
-            click.echo(f"\n  {shown}/{total} shown")
+    if page > total_pages:
+        raise click.BadParameter(
+            f"only {total_pages} page(s) available", param_hint="--page"
+        )
+
+    start = (page - 1) * _PAGE_SIZE
+    _print_header()
+    for acc in accounts[start : start + _PAGE_SIZE]:
+        _print_row(acc)
+
+    click.echo(f"\n  Page {page}/{total_pages}")
