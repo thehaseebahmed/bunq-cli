@@ -74,6 +74,50 @@ bunq accounts list --include-closed --all   # every account, no pagination
 
 > Name search is not supported — the bunq API does not expose server-side filtering on the accounts endpoint.
 
+### `bunq payments draft create`
+
+Create a draft payment. A draft payment must be accepted (see
+`bunq payments draft accept` below) before the underlying payment executes —
+useful for shared/multi-user accounts that require approval.
+
+```bash
+bunq payments draft create --account-id 123 --iban NL00BUNQ0123456789 \
+    --amount 12.50 --currency EUR --description "Dinner split"
+bunq payments draft create --account-id 123 --email friend@example.com --amount 5.00
+```
+
+> Each call creates a single draft payment, and `number_of_required_accepts`
+> is always 1 — the only value the bunq API accepts today.
+
+### `bunq payments draft list`
+
+List draft payments for an account. Shown 10 per page by default.
+
+```bash
+bunq payments draft list --account-id 123
+bunq payments draft list --account-id 123 --status PENDING --all
+```
+
+### `bunq payments draft get`
+
+Show full details of a single draft payment, including all entries.
+
+```bash
+bunq payments draft get --account-id 123 456
+```
+
+### `bunq payments draft accept` / `bunq payments draft reject`
+
+Accept or reject a pending draft payment. Accepting executes the underlying
+payment(s).
+
+```bash
+bunq payments draft accept --account-id 123 456
+bunq payments draft reject --account-id 123 456
+```
+
+> Both commands require the draft to still be in `PENDING` status.
+
 ## Development
 
 ```bash

@@ -49,7 +49,7 @@ def request(
     method: str,
     path: str,
     *,
-    body: dict | None = None,
+    body: dict | list | None = None,
     token: str | None = None,
     private_pem: str | None = None,
 ) -> dict:
