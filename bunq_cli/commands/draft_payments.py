@@ -59,33 +59,20 @@ def _resolve_alias(iban: str | None, email: str | None, phone: str | None) -> tu
 
 
 def _entries_of(draft: dict) -> list[dict]:
-    """Return the draft's line items.
-
-    bunq's documented draft-payment object is flat (amount/currency/receiver_*
-    directly on the object, no nested entries list), but responses have been
-    seen to also carry a richer nested representation. Support both.
-    """
-    entries = draft.get("entries")
-    return entries if entries else [draft]
+    return draft.get("entries") or [{}]
 
 
 def _fmt_amount(entry: dict) -> str:
-    amt = entry.get("amount")
-    if isinstance(amt, dict):
-        value, currency = amt.get("value", "0"), amt.get("currency", "")
-    else:
-        value, currency = amt or "0", entry.get("currency", "")
+    amt = entry.get("amount", {})
     try:
-        return f"{currency} {Decimal(value):,.2f}"
+        return f"{amt.get('currency', '')} {Decimal(amt.get('value', '0')):,.2f}"
     except InvalidOperation:
         return "—"
 
 
 def _counterparty(entry: dict) -> str:
-    alias = entry.get("counterparty_alias")
-    if isinstance(alias, dict):
-        return alias.get("display_name") or alias.get("iban") or alias.get("value") or "—"
-    return entry.get("receiver_name") or entry.get("receiver_value") or "—"
+    alias = entry.get("counterparty_alias", {}) or {}
+    return alias.get("display_name") or alias.get("iban") or alias.get("value") or "—"
 
 
 def _print_header() -> None:
@@ -202,22 +189,18 @@ def draft_create(
     state = load_state()
     user_id, token, private_pem = _require_session(state)
 
-    # bunq's draft-payment create body is a JSON array of flat draft payment
-    # objects (up to 350 per request); we always send a single-item array.
-    draft = {
-        "monetary_account_id": str(monetary_account_id),
-        "status": "PENDING",
-        "amount": amount,
-        "currency": currency,
-        "description": description,
-        "receiver_type": alias_type,
-        "receiver_value": alias_value,
+    counterparty_alias = {"type": alias_type, "value": alias_value}
+    if recipient_name:
+        counterparty_alias["name"] = recipient_name
+
+    body = {
+        "entries": [{
+            "amount": {"value": amount, "currency": currency},
+            "counterparty_alias": counterparty_alias,
+            "description": description,
+        }],
         "number_of_required_accepts": 1,
     }
-    if recipient_name:
-        draft["receiver_name"] = recipient_name
-
-    body = [draft]
 
     try:
         resp = request(
@@ -231,16 +214,11 @@ def draft_create(
         raise click.ClickException(str(exc))
 
     created = extract(resp, "DraftPayment")
-    if created:
-        click.echo(f"Draft payment created. ID: {created.get('id')}  Status: {created.get('status')}")
+    if not created:
+        click.echo("Draft payment created.")
         return
 
-    # Batch-style create endpoints often just return the created object id(s).
-    ids = [item["Id"]["id"] for item in resp.get("Response", []) if "Id" in item]
-    if ids:
-        click.echo(f"Draft payment created. ID: {ids[0]}")
-    else:
-        click.echo("Draft payment created.")
+    click.echo(f"Draft payment created. ID: {created.get('id')}  Status: {created.get('status')}")
 
 
 # ── payments draft list ─────────────────────────────────────────────────────

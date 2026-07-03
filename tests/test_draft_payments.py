@@ -31,16 +31,14 @@ def test_draft_create(monkeypatch):
     assert result.exit_code == 0, result.output
     assert calls["method"] == "POST"
     assert calls["path"] == "/user/1/monetary-account/123/draft-payment"
-    assert calls["body"] == [{
-        "monetary_account_id": "123",
-        "status": "PENDING",
-        "amount": "12.50",
-        "currency": "EUR",
-        "description": "test",
-        "receiver_type": "IBAN",
-        "receiver_value": "NL00BUNQ0123456789",
+    assert calls["body"] == {
+        "entries": [{
+            "amount": {"value": "12.50", "currency": "EUR"},
+            "counterparty_alias": {"type": "IBAN", "value": "NL00BUNQ0123456789"},
+            "description": "test",
+        }],
         "number_of_required_accepts": 1,
-    }]
+    }
     assert "42" in result.output
 
 
