@@ -31,11 +31,16 @@ def test_draft_create(monkeypatch):
     assert result.exit_code == 0, result.output
     assert calls["method"] == "POST"
     assert calls["path"] == "/user/1/monetary-account/123/draft-payment"
-    assert calls["body"]["entries"][0]["amount"] == {"value": "12.50", "currency": "EUR"}
-    assert calls["body"]["entries"][0]["counterparty_alias"] == {
-        "type": "IBAN", "value": "NL00BUNQ0123456789"
-    }
-    assert calls["body"]["number_of_required_accepts"] == 1
+    assert calls["body"] == [{
+        "monetary_account_id": "123",
+        "status": "PENDING",
+        "amount": "12.50",
+        "currency": "EUR",
+        "description": "test",
+        "receiver_type": "IBAN",
+        "receiver_value": "NL00BUNQ0123456789",
+        "number_of_required_accepts": 1,
+    }]
     assert "42" in result.output
 
 
@@ -142,10 +147,12 @@ def test_draft_get_not_found(monkeypatch):
 
 
 def test_draft_accept(monkeypatch):
-    calls = {}
+    calls = []
 
     def fake_request(method, path, *, body=None, token=None, private_pem=None):
-        calls["method"], calls["path"], calls["body"] = method, path, body
+        calls.append((method, path, body))
+        if method == "GET":
+            return {"Response": [{"DraftPayment": {"id": 456, "status": "PENDING", "updated": "2026-01-01"}}]}
         return {"Response": [{"DraftPayment": {"id": 456, "status": "ACCEPTED"}}]}
 
     result = _invoke(monkeypatch, fake_request, [
@@ -153,17 +160,22 @@ def test_draft_accept(monkeypatch):
     ])
 
     assert result.exit_code == 0, result.output
-    assert calls["method"] == "PUT"
-    assert calls["path"] == "/user/1/monetary-account/123/draft-payment/456"
-    assert calls["body"] == {"status": "ACCEPTED"}
+    assert calls[0] == ("GET", "/user/1/monetary-account/123/draft-payment/456", None)
+    assert calls[1] == (
+        "PUT",
+        "/user/1/monetary-account/123/draft-payment/456",
+        {"status": "ACCEPTED", "previous_updated_timestamp": "2026-01-01"},
+    )
     assert "ACCEPTED" in result.output
 
 
 def test_draft_reject(monkeypatch):
-    calls = {}
+    calls = []
 
     def fake_request(method, path, *, body=None, token=None, private_pem=None):
-        calls["body"] = body
+        calls.append((method, body))
+        if method == "GET":
+            return {"Response": [{"DraftPayment": {"id": 456, "status": "PENDING", "updated": "2026-01-01"}}]}
         return {"Response": [{"DraftPayment": {"id": 456, "status": "REJECTED"}}]}
 
     result = _invoke(monkeypatch, fake_request, [
@@ -171,12 +183,14 @@ def test_draft_reject(monkeypatch):
     ])
 
     assert result.exit_code == 0, result.output
-    assert calls["body"] == {"status": "REJECTED"}
+    assert calls[1] == ("PUT", {"status": "REJECTED", "previous_updated_timestamp": "2026-01-01"})
     assert "REJECTED" in result.output
 
 
 def test_draft_accept_api_error(monkeypatch):
     def fake_request(method, path, *, body=None, token=None, private_pem=None):
+        if method == "GET":
+            return {"Response": [{"DraftPayment": {"id": 456, "status": "PENDING"}}]}
         raise BunqAPIError(["draft payment is not PENDING"], 400)
 
     result = _invoke(monkeypatch, fake_request, [

@@ -86,8 +86,8 @@ bunq payments draft create --account-id 123 --iban NL00BUNQ0123456789 \
 bunq payments draft create --account-id 123 --email friend@example.com --amount 5.00
 ```
 
-> Only a single payment entry per draft is currently supported, and
-> `number_of_required_accepts` is always 1 — the only value the bunq API accepts today.
+> Each call creates a single draft payment, and `number_of_required_accepts`
+> is always 1 — the only value the bunq API accepts today.
 
 ### `bunq payments draft list`
 

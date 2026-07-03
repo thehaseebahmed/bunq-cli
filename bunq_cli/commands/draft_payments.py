@@ -58,17 +58,34 @@ def _resolve_alias(iban: str | None, email: str | None, phone: str | None) -> tu
     return _ALIAS_TYPES[kind], value
 
 
+def _entries_of(draft: dict) -> list[dict]:
+    """Return the draft's line items.
+
+    bunq's documented draft-payment object is flat (amount/currency/receiver_*
+    directly on the object, no nested entries list), but responses have been
+    seen to also carry a richer nested representation. Support both.
+    """
+    entries = draft.get("entries")
+    return entries if entries else [draft]
+
+
 def _fmt_amount(entry: dict) -> str:
-    amt = entry.get("amount", {})
+    amt = entry.get("amount")
+    if isinstance(amt, dict):
+        value, currency = amt.get("value", "0"), amt.get("currency", "")
+    else:
+        value, currency = amt or "0", entry.get("currency", "")
     try:
-        return f"{amt.get('currency', '')} {Decimal(amt.get('value', '0')):,.2f}"
+        return f"{currency} {Decimal(value):,.2f}"
     except InvalidOperation:
         return "—"
 
 
 def _counterparty(entry: dict) -> str:
-    alias = entry.get("counterparty_alias", {}) or {}
-    return alias.get("display_name") or alias.get("name") or alias.get("value") or "—"
+    alias = entry.get("counterparty_alias")
+    if isinstance(alias, dict):
+        return alias.get("display_name") or alias.get("iban") or alias.get("value") or "—"
+    return entry.get("receiver_name") or entry.get("receiver_value") or "—"
 
 
 def _print_header() -> None:
@@ -78,8 +95,7 @@ def _print_header() -> None:
 
 
 def _print_row(draft: dict) -> None:
-    entries = draft.get("entries", [])
-    first = entries[0] if entries else {}
+    first = _entries_of(draft)[0]
     click.echo(
         f"{draft.get('id', ''):<10}  "
         f"{draft.get('status', ''):<10}  "
@@ -96,7 +112,7 @@ def _print_detail(draft: dict) -> None:
     click.echo(f"Created:           {draft.get('created')}")
     click.echo(f"Updated:           {draft.get('updated')}")
     click.echo("Entries:")
-    for i, entry in enumerate(draft.get("entries", []), start=1):
+    for i, entry in enumerate(_entries_of(draft), start=1):
         click.echo(
             f"  [{i}] {_fmt_amount(entry):>14}  ->  {_counterparty(entry)}"
             f"  — {entry.get('description', '')}"
@@ -106,15 +122,22 @@ def _print_detail(draft: dict) -> None:
 def _update_status(monetary_account_id: int, draft_payment_id: int, status: str) -> None:
     state = load_state()
     user_id, token, private_pem = _require_session(state)
+    path = f"/user/{user_id}/monetary-account/{monetary_account_id}/draft-payment/{draft_payment_id}"
 
     try:
-        resp = request(
-            "PUT",
-            f"/user/{user_id}/monetary-account/{monetary_account_id}/draft-payment/{draft_payment_id}",
-            body={"status": status},
-            token=token,
-            private_pem=private_pem,
-        )
+        current_resp = request("GET", path, token=token, private_pem=private_pem)
+    except BunqAPIError as exc:
+        raise click.ClickException(str(exc))
+
+    current = extract(current_resp, "DraftPayment") or {}
+    body = {"status": status}
+    if current.get("updated"):
+        # bunq's draft-payment object carries previous_updated_timestamp for
+        # optimistic-concurrency updates; include it when we have it.
+        body["previous_updated_timestamp"] = current["updated"]
+
+    try:
+        resp = request("PUT", path, body=body, token=token, private_pem=private_pem)
     except BunqAPIError as exc:
         raise click.ClickException(str(exc))
 
@@ -165,9 +188,9 @@ def draft_create(
     """Create a draft payment.
 
     A draft payment must be accepted (via `bunq payments draft accept`) before
-    the underlying payment executes. Only a single entry per draft is
-    supported, and `number_of_required_accepts` is always 1 — the only value
-    the bunq API currently accepts.
+    the underlying payment executes. Only a single draft is created per call;
+    `number_of_required_accepts` is always 1 — the only value the bunq API
+    currently accepts.
     """
     try:
         Decimal(amount)
@@ -179,18 +202,22 @@ def draft_create(
     state = load_state()
     user_id, token, private_pem = _require_session(state)
 
-    counterparty_alias = {"type": alias_type, "value": alias_value}
-    if recipient_name:
-        counterparty_alias["name"] = recipient_name
-
-    body = {
-        "entries": [{
-            "amount": {"value": amount, "currency": currency},
-            "counterparty_alias": counterparty_alias,
-            "description": description,
-        }],
+    # bunq's draft-payment create body is a JSON array of flat draft payment
+    # objects (up to 350 per request); we always send a single-item array.
+    draft = {
+        "monetary_account_id": str(monetary_account_id),
+        "status": "PENDING",
+        "amount": amount,
+        "currency": currency,
+        "description": description,
+        "receiver_type": alias_type,
+        "receiver_value": alias_value,
         "number_of_required_accepts": 1,
     }
+    if recipient_name:
+        draft["receiver_name"] = recipient_name
+
+    body = [draft]
 
     try:
         resp = request(
@@ -203,12 +230,17 @@ def draft_create(
     except BunqAPIError as exc:
         raise click.ClickException(str(exc))
 
-    draft = extract(resp, "DraftPayment")
-    if not draft:
-        click.echo("Draft payment created.")
+    created = extract(resp, "DraftPayment")
+    if created:
+        click.echo(f"Draft payment created. ID: {created.get('id')}  Status: {created.get('status')}")
         return
 
-    click.echo(f"Draft payment created. ID: {draft.get('id')}  Status: {draft.get('status')}")
+    # Batch-style create endpoints often just return the created object id(s).
+    ids = [item["Id"]["id"] for item in resp.get("Response", []) if "Id" in item]
+    if ids:
+        click.echo(f"Draft payment created. ID: {ids[0]}")
+    else:
+        click.echo("Draft payment created.")
 
 
 # ── payments draft list ─────────────────────────────────────────────────────
